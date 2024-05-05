@@ -1,6 +1,7 @@
 import bme280_float as bme280
 import json
 import time
+import binascii
 from machine import I2C, Pin, UART, deepsleep, RTC
 
 # set bme280
@@ -24,8 +25,11 @@ def readbme():
 def broadcast_data(payload):
     # console dump for anyone looking
     print(payload)
-    uart2.write(payload)
-    
+    #uart2.write(payload)
+    uart2.write(binascii.b2a_base64(payload.encode()))
+    #uart2.write('\n')
+    uart2.flush()
+
 while True:
     payload = {}
     # BME280 data gather
@@ -41,4 +45,5 @@ while True:
     broadcast_data(payloadjson)
 
     # sleep for 30 seconds
-    deepsleep(30000)    
+    #deepsleep(10000)    
+    time.sleep(5)
