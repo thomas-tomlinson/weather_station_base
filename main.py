@@ -23,27 +23,51 @@ def readbme():
     return dict
 
 def broadcast_data(payload):
+    transmitPayload = binascii.b2a_base64(payload.encode())
     # console dump for anyone looking
-    print(payload)
-    #uart2.write(payload)
-    uart2.write(binascii.b2a_base64(payload.encode()))
-    #uart2.write('\n')
+    print(transmitPayload)
+    # wake up HC-12
+    set_pin = Pin(23, Pin.OUT)
+    set_pin.off()
+    time.sleep_ms(200)
+    uart2.write('AT')
+    trash = uart2.read()
     uart2.flush()
+    set_pin.on()
+    time.sleep_ms(200)
 
-while True:
-    payload = {}
-    # BME280 data gather
-    payload['bme280'] = readbme()
-    # windspeed
-    # winddirection
-    # rain
+    uart2.write(transmitPayload)
+    uart2.flush()
+    time.sleep_ms(200)
 
-    # timestamp
-    # we're using seconds since boot as a way to tell the data packets apart.
-    payload['timemark'] = time.time()
-    payloadjson = json.dumps(payload)
-    broadcast_data(payloadjson)
+    set_pin.off()
+    time.sleep_ms(200)
+    uart2.write('AT+SLEEP')
+    uart2.flush()
+    set_pin.on()
+    time.sleep_ms(200)
+    # HC-12 now in sleep mode
 
-    # sleep for 30 seconds
-    #deepsleep(10000)    
-    time.sleep(5)
+def gather_loop():
+    while True:
+        payload = {}
+        # BME280 data gather
+        payload['bme280'] = readbme()
+        # windspeed
+        # winddirection
+        # rain
+
+        # timestamp
+        # we're using seconds since boot as a way to tell the data packets apart.
+        payload['timemark'] = time.time()
+        payloadjson = json.dumps(payload)
+        broadcast_data(payloadjson)
+
+        # sleep for 30 seconds
+        #deepsleep(10000)
+        time.sleep(5)
+
+def main():
+    gather_loop()
+
+main()
