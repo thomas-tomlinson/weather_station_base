@@ -1,30 +1,3 @@
-#
-# This file is part of the micropython-esp32-ulp project,
-# https://github.com/micropython/micropython-esp32-ulp
-#
-# SPDX-FileCopyrightText: 2018-2023, the micropython-esp32-ulp authors, see AUTHORS file.
-# SPDX-License-Identifier: MIT
-
-"""
-Example for: ESP32
-
-Very basic example showing how to read a GPIO pin from the ULP and access
-that data from the main CPU.
-
-In this case GPIO4 is being read. Note that the ULP needs to refer to GPIOs
-via their RTC channel number. You can see the mapping in this file:
-https://github.com/espressif/esp-idf/blob/v5.0.2/components/soc/esp32/include/soc/rtc_io_channel.h#L51
-
-If you change to a different GPIO number, make sure to modify both the channel
-number and also the RTC_IO_TOUCH_PAD0_* references appropriately. The best place
-to see the mappings might be this table here (notice the "real GPIO numbers" as
-comments to each line):
-https://github.com/espressif/esp-idf/blob/v5.0.2/components/soc/esp32/rtc_io_periph.c#L53
-
-The timer is set to a rather long period, so you can watch the data value
-change as you change the GPIO input (see loop at the end).
-"""
-
 from esp32 import ULP
 from machine import mem32
 import time
@@ -37,21 +10,30 @@ source = """\
 #define RTC_IO_TOUCH_PAD0_FUN_IE_M   (BIT(13))
 #define RTC_GPIO_IN_REG              (DR_REG_RTCIO_BASE + 0x24)
 #define RTC_GPIO_IN_NEXT_S           14
-.set channel, 10  # 10 is the channel no. of gpio4
+.set wind_pin, 4  # GPIO34 / RTC_GPIO4 wind anonmeter pin 
+.set rain_pin, 5  # GPIO35 RTC_GPIO5, rain bucket pin
 .set max_histogram_slots, 10
 .set max_histogram_bytes, max_histogram_slots * 4
 .set loops_per_sec, 200
 
-        .global p1_status
-p1_status:
+wind_status:
         .long 0
 
-        .global p1_status_next
-p1_status_next:
+wind_status_next:
         .long 0
 
-        .global event_counter
-event_counter:
+rain_status:
+        .long 0
+
+rain_status_next:
+        .long 0
+
+        .global wind_counter
+wind_counter:
+        .long 0
+
+        .global rain_counter
+rain_counter:
         .long 0
 
 loop_counter:
@@ -74,10 +56,11 @@ wind_histogram:
 wind_offset:
         .long 0
 
+
         .text
 
-bump_event_counter:
-        move r3, event_counter
+incr_wind_counter:
+        move r3, wind_counter
         ld r2, r3, 0
         add r2, r2, 1
         st r2, r3, 0
@@ -90,28 +73,36 @@ bump_event_counter:
         add r2, r2, 1
         st r2, r3, 0
 
-        jump check_loop_counter
+        jump rain_check
 
-p1_status_changed:
-        move r3, p1_status_next
+wind_status_changed:
+        move r3, wind_status_next
         ld r2, r3, 0
         add r2, r2, 1
         and r2, r2, 1
         st r2, r3, 0
 
-        jump bump_event_counter, eq
+        jump incr_wind_counter, eq
         
-        jump check_loop_counter
+        jump rain_check
 
-check_loop_counter:
-        # this checks if we need to reset the loop
-        # and advance the wind_offset
-        move r3, loop_counter
-        ld r2, r3, 0 
-        sub r2, r2, loops_per_sec
-        jump incr_wind_offset, eq
+rain_status_changed:
+        move r3, rain_status_next
+        ld r2, r3, 0
+        add r2, r2, 1
+        and r2, r2, 1
+        st r2, r3, 0
 
-        halt
+        jump incr_rain_counter, eq
+        
+        jump loop_incr
+
+incr_rain_counter:
+        move r3, rain_counter
+        ld r2, r3, 0
+        add r2, r2, 1
+        st r2, r3, 0
+        jump loop_incr
 
 incr_wind_offset:
         # reset our loop counter to 0
@@ -138,39 +129,65 @@ reset_wind_offset:
 
     .global entry
 entry:
-        # connect GPIO to the RTC subsystem so the ULP can read it
-        WRITE_RTC_REG(RTC_IO_TOUCH_PAD0_REG, RTC_IO_TOUCH_PAD0_MUX_SEL_M, 1, 1)
-        # switch the GPIO into input mode
-        WRITE_RTC_REG(RTC_IO_TOUCH_PAD0_REG, RTC_IO_TOUCH_PAD0_FUN_IE_M, 1, 1)
-        # read the GPIO's current state into r0
-        READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S + channel, 1)
+        READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S, 16)
+        move r1, r0
 
+        # set wind_status, RTC4, GPIO34
+        move r3, wind_status
+        rsh r0, r1, wind_pin
+        and r0, r0, 1
+        st r0, r3, 0
+
+        # set rain_status, RTC5, GPIO35
+        move r3, rain_status
+        rsh r0, r1, rain_pin
+        and r0, r0, 1
+        st r0, r3, 0
+
+        # see if wind_status is changed
+        rsh r0, r1, wind_pin
+        and r0, r0, 1
+        move r3, wind_status_next
+        ld r3, r3, 0
+        add r3, r0, r3
+        and r3, r3, 1
+        jump wind_status_changed, eq        
+
+rain_check:
+        # see if rain_status is changed
+        rsh r0, r1, rain_pin
+        and r0, r0, 1
+        move r3, rain_status_next
+        ld r3, r3, 0
+        add r3, r0, r3
+        and r3, r3, 1
+        jump rain_status_changed, eq        
+
+loop_incr:
         # increment loop_counter        
         move r3, loop_counter
         ld r2, r3, 0
         add r2, r2, 1
         st r2, r3, 0
 
-        # set r3 to the memory address of p1_status
-        move r3, p1_status
-        st r0, r3, 0
+        # this should be moved below here with a label
+        #jump check_loop_counter
 
-        # see if p1 status is changed
-        and r0, r0, 1
-        move r3, p1_status_next
-        ld r3, r3, 0
-        add r3, r0, r3
-        and r3, r3, 1
-        jump p1_status_changed, eq        
+check_loop_counter:
+        # this checks if we need to reset the loop
+        # and advance the wind_offset
+        move r3, loop_counter
+        ld r2, r3, 0 
+        sub r2, r2, loops_per_sec
+        jump incr_wind_offset, eq
 
-        jump check_loop_counter
         # halt ULP co-processor (until it gets woken up again)
         halt
 """
 
 binary = src_to_binary(source, cpu="esp32")  # cpu is esp32 or esp32s2
 
-load_addr, entry_addr = 0, (53*4)
+load_addr, entry_addr = 0, (63*4)
 
 ULP_MEM_BASE = 0x50000000
 ULP_DATA_MASK = 0xffff  # ULP data is only in lower 16 bits
@@ -185,7 +202,7 @@ ulp.run(entry_addr)
 def windspeed():
     cup_r = 80 # 80mm radius of wind cups
     full_circle = (2 * 3.14 * cup_r)
-    count = mem32[ULP_MEM_BASE + (2*4)] & ULP_DATA_MASK
+    count = mem32[ULP_MEM_BASE + (4*4)] & ULP_DATA_MASK
     rps = 0
     histo = []
     if count > 0:
@@ -195,7 +212,7 @@ def windspeed():
     # meters per second
     mps = ((rps * full_circle) / 1000) 
     # find the gust
-    histogram_start = 4 * 4
+    histogram_start = 7 * 4
     for i in range(0,10):
         value = int(mem32[ULP_MEM_BASE + histogram_start] & ULP_DATA_MASK)
         histo.append(value)
@@ -206,11 +223,19 @@ def windspeed():
     
     return mps, histo[-1]
 
-while True:
-    time.sleep(10)
+def raindrops():
+    value = int(mem32[ULP_MEM_BASE + (4*5)] & ULP_DATA_MASK)
+    return value
 
+
+while True:
+    #lightsleep(10000)
+    time.sleep(10)
     avg, gust = windspeed()
     print("avg meters per second: {} gust: {}".format(avg, gust))
+    drops = raindrops()
+    print("cumlative drops are {}".format(drops))
+
     #histogram_start = 4 * 4
     #for i in range(0,10):
     #    value = int(mem32[ULP_MEM_BASE + histogram_start] & ULP_DATA_MASK)
