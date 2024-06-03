@@ -10,7 +10,7 @@ source = """\
 #define RTC_IO_TOUCH_PAD0_FUN_IE_M   (BIT(13))
 #define RTC_GPIO_IN_REG              (DR_REG_RTCIO_BASE + 0x24)
 #define RTC_GPIO_IN_NEXT_S           14
-.set wind_pin, 4  # GPIO34 / RTC_GPIO4 wind anonmeter pin 
+.set wind_pin, 9  # GPIO32 / RTC_GPIO9 wind anonmeter pin
 .set rain_pin, 5  # GPIO35 RTC_GPIO5, rain bucket pin
 .set max_histogram_slots, 10
 .set max_histogram_bytes, max_histogram_slots * 4
@@ -37,7 +37,7 @@ rain_counter:
         .long 0
 
 loop_counter:
-        .long 0        
+        .long 0
 
         .global wind_histogram
 wind_histogram:
@@ -184,70 +184,52 @@ check_loop_counter:
         # halt ULP co-processor (until it gets woken up again)
         halt
 """
-
-binary = src_to_binary(source, cpu="esp32")  # cpu is esp32 or esp32s2
-
-load_addr, entry_addr = 0, (63*4)
-
 ULP_MEM_BASE = 0x50000000
 ULP_DATA_MASK = 0xffff  # ULP data is only in lower 16 bits
 
-ulp = ULP()
-ulp.set_wakeup_period(0, 5000)  # use timer0, wakeup after 50.000 cycles
-ulp.load_binary(load_addr, binary)
+class ULP_WEATHER:
+    def __init__(self):
+        self.binary = src_to_binary(source, cpu="esp32")  # cpu is esp32 or esp32s2
+        self.load_addr = 0
+        # these values are calculated upon a compile of the ULP code.  Currently
+        # this is found through watching the console during the compile and noting the 
+        # memory offsets.
+        self.entry_addr = ULP_MEM_BASE + (63*4)
+        self.wind_counter = ULP_MEM_BASE + (4*4)
+        self.wind_histogram = ULP_MEM_BASE + (7*4)
+        self.rain_counter = ULP_MEM_BASE +(4*5)
 
-mem32[ULP_MEM_BASE + load_addr] = 0x0  # initialise state to 0
-ulp.run(entry_addr)
+        ulp = ULP()
+        ulp.set_wakeup_period(0, 5000)  # use timer0, wakeup after 50.000 cycles
+        ulp.load_binary(self.load_addr, self.binary)
 
-def windspeed():
-    cup_r = 80 # 80mm radius of wind cups
-    full_circle = (2 * 3.14 * cup_r)
-    count = mem32[ULP_MEM_BASE + (4*4)] & ULP_DATA_MASK
-    rps = 0
-    histo = []
-    if count > 0:
-        rps = (count / 10)
-    #clear the counter
-    mem32[ULP_MEM_BASE + (2*4)] = 0
-    # meters per second
-    mps = ((rps * full_circle) / 1000) 
-    # find the gust
-    histogram_start = 7 * 4
-    for i in range(0,10):
-        value = int(mem32[ULP_MEM_BASE + histogram_start] & ULP_DATA_MASK)
-        histo.append(value)
-        print('mem address: {}, value: {}'.format(histogram_start, value))
-        mem32[ULP_MEM_BASE + histogram_start] = 0
-        histogram_start += 4
-    histo.sort()
-    
-    return mps, histo[-1]
+        mem32[ULP_MEM_BASE + self.load_addr] = 0x0  # initialise state to 0
+        ulp.run(self.entry_addr)
 
-def raindrops():
-    value = int(mem32[ULP_MEM_BASE + (4*5)] & ULP_DATA_MASK)
-    return value
+    def windspeed(self):
+        cup_r = 80 # 80mm radius of wind cups
+        full_circle = (2 * 3.14 * cup_r)
+        count = mem32[self.wind_counter] & ULP_DATA_MASK
+        # clear the counter
+        mem32[self.wind_counter] = 0
+        rps = 0
+        histo = []
+        if count > 0:
+            rps = (count / 10)
+        # meters per second
+        mps = ((rps * full_circle) / 1000) 
+        # find the gust
+        histogram_start = self.wind_histogram
+        for i in range(0,10):
+            value = int(mem32[histogram_start] & ULP_DATA_MASK)
+            histo.append(value)
+            print('mem address: {}, value: {}'.format(histogram_start, value))
+            mem32[histogram_start] = 0
+            histogram_start += 4
+        histo.sort()
+        
+        return mps, histo[-1]
 
-
-while True:
-    #lightsleep(10000)
-    time.sleep(10)
-    avg, gust = windspeed()
-    print("avg meters per second: {} gust: {}".format(avg, gust))
-    drops = raindrops()
-    print("cumlative drops are {}".format(drops))
-
-    #histogram_start = 4 * 4
-    #for i in range(0,10):
-    #    value = int(mem32[ULP_MEM_BASE + histogram_start] & ULP_DATA_MASK)
-    #    mem32[ULP_MEM_BASE + histogram_start] = 0
-    #    print('mem address: {}, value: {}'.format(histogram_start, value))
-    #    histogram_start += 4
-        #print(int(mem32[ULP_MEM_BASE + histogram_start] & ULP_DATA_MASK))
-        #mem32[ULP_MEM_BASE + (histogram_start * 4)] = 0
-
-    #print(hex(mem32[ULP_MEM_BASE] & ULP_DATA_MASK))
-    #count = mem32[ULP_MEM_BASE + (2*4)] & ULP_DATA_MASK
-    #print(count)
-    #if count > 15:
-    #    mem32[ULP_MEM_BASE + (2*4)] = 0
-    
+    def rainbuckets(self):
+        value = int(mem32[self.rain_counter] & ULP_DATA_MASK)
+        return value
