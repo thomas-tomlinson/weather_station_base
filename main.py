@@ -4,11 +4,16 @@ import time
 import binascii
 from machine import I2C, Pin, UART, lightsleep, RTC, ADC
 from micropython import const
+from ulp.ulp_weather import ULP_WEATHER
+from as5600 import AS5600
 
-AS5600_ADDRESS = const(0x36)
-# set bme280
+# I2C specific configs
 i2c = I2C(0, scl=Pin(22), sda=Pin(21))
 bme = bme280.BME280(i2c=i2c)
+as5600 = AS5600(i2c=i2c) 
+
+# init the ULP data gather process
+ulp = ULP_WEATHER()
 
 # setup hc-12 radio
 uart2 = UART(2, baudrate=9600, tx=17, rx=16)
@@ -72,25 +77,28 @@ def init_hc12():
     set_pin.on()
     time.sleep_ms(200)
 
-def init_as5600():
-    # unless your burn the config into this, it starts up full power mode
-    conf = b'\x00\x03'
-    i2c.writeto_mem(AS5600_ADDRESS, 0x07, conf)
+def read_wind(seconds):
+    dict = {}
+    avg_wind, gust_wind =  ulp.windspeed(seconds)
+    wind_dir = as5600.getAngle()
+    dict['avg_wind'] = avg_wind
+    dict['gust_wind'] = gust_wind
+    dict['wind_dir'] = wind_dir
+    return dict
 
-def read_as5600_angle():
-    buf = i2c.readfrom_mem(AS5600_ADDRESS, 0x0E, 2)
-    ang = (buf[0]<<8 | buf[1]) / 4096.0*360
-    return ang     
+def read_rain():
+    value = ulp.rainbuckets()
+    return value
 
 def gather_loop():
+    sleep_seconds = 20
     while True:
         payload = {}
         # BME280 data gather
         payload['bme280'] = read_bme()
         payload['battery'] = read_battery()
-        # windspeed
-        # winddirection
-        # rain
+        payload['wind'] = read_wind()
+        payload['rainbuckets'] = read_rain()
 
         # timestamp
         # we're using seconds since boot as a way to tell the data packets apart.
@@ -100,7 +108,7 @@ def gather_loop():
 
         # sleep for 30 seconds
         #deepsleep(20000)
-        lightsleep(20000)
+        lightsleep(sleep_seconds * 1000)
         #time.sleep(5)
 
 def main():
