@@ -32,30 +32,16 @@ rain_status_next:
 wind_counter:
         .long 0
 
+        .global wind_gust
+wind_gust:
+        .long 0
+
+wind_holder:
+        .long 0
+
         .global rain_counter
 rain_counter:
         .long 0
-
-loop_counter:
-        .long 0
-
-        .global wind_histogram
-wind_histogram:
-        .long 0
-        .long 0
-        .long 0
-        .long 0
-        .long 0
-        .long 0
-        .long 0
-        .long 0
-        .long 0
-        .long 0
-        .long 0
-
-wind_offset:
-        .long 0
-
 
         .text
 
@@ -64,15 +50,23 @@ incr_wind_counter:
         ld r2, r3, 0
         add r2, r2, 1
         st r2, r3, 0
-        # add to wind histogram
-        move r3, wind_offset
-        ld r1, r3, 0
-        move r3, wind_histogram
-        add r3, r3, r1
+        # increment the wind_holder
+        move r3, wind_holder
         ld r2, r3, 0
         add r2, r2, 1
         st r2, r3, 0
+        #check if wind_holder is more than wind_gust
+        move r3, wind_gust
+        ld r1, r3, 0
+        add r1, r1, 1
+        sub r1, r1, r2
+        jump update_gust, eq 
+        jump rain_check
 
+update_gust:
+        move r3, wind_gust
+        #r2 is the current wind_holder
+        st r2, r3, 0        
         jump rain_check
 
 wind_status_changed:
@@ -94,7 +88,6 @@ rain_status_changed:
         st r2, r3, 0
 
         jump incr_rain_counter, eq
-        
         jump loop_incr
 
 incr_rain_counter:
@@ -104,28 +97,16 @@ incr_rain_counter:
         st r2, r3, 0
         jump loop_incr
 
-incr_wind_offset:
-        # reset our loop counter to 0
-        move r3, loop_counter
-        move r2, 0
-        st r2, r3, 0
-        # increment our wind_offset 
-        move r3, wind_offset
-        ld r2, r3, 0
-        add r2, r2, 1
-        st r2, r3, 0
-
-        #check to see if we need to reset to 0
-        add r2, r2, 1
-        sub r2, r2, max_histogram_slots
-        jump reset_wind_offset, eq
+reset_counter:
+        # reset stage to 0
+        STAGE_RST
+        # reset wind_holder to 0
+        move r3, wind_holder
+        move r1, 0
+        st r1, r3, 0
 
         halt
 
-reset_wind_offset:
-        # r2 should be 0 and r3 wind_offset.
-        st r2, r3, 0 
-        halt
 
     .global entry
 entry:
@@ -165,23 +146,9 @@ rain_check:
 
 loop_incr:
         # increment loop_counter        
-        move r3, loop_counter
-        ld r2, r3, 0
-        add r2, r2, 1
-        st r2, r3, 0
+        STAGE_INC 1
 
-        # this should be moved below here with a label
-        #jump check_loop_counter
-
-check_loop_counter:
-        # this checks if we need to reset the loop
-        # and advance the wind_offset
-        move r3, loop_counter
-        ld r2, r3, 0 
-        sub r2, r2, loops_per_sec
-        jump incr_wind_offset, eq
-
-        # halt ULP co-processor (until it gets woken up again)
+        JUMPS reset_counter, 200, EQ
         halt
 """
 ULP_MEM_BASE = 0x50000000
@@ -189,15 +156,15 @@ ULP_DATA_MASK = 0xffff  # ULP data is only in lower 16 bits
 
 class ULP_WEATHER:
     def __init__(self):
-        self.binary = src_to_binary(source, cpu="esp32")  # cpu is esp32 or esp32s2
+        self.binary = src_to_binary(source, cpu="esp32")  
         self.load_addr = 0
         # these values are calculated upon a compile of the ULP code.  Currently
         # this is found through watching the console during the compile and noting the 
         # memory offsets.
-        self.entry_addr = ULP_MEM_BASE + (63*4)
+        self.entry_addr = ULP_MEM_BASE + (49*4)
         self.wind_counter = ULP_MEM_BASE + (4*4)
-        self.wind_histogram = ULP_MEM_BASE + (7*4)
-        self.rain_counter = ULP_MEM_BASE +(4*5)
+        self.wind_gust = ULP_MEM_BASE + (5*4)
+        self.rain_counter = ULP_MEM_BASE +(7*4)
 
         ulp = ULP()
         ulp.set_wakeup_period(0, 5000)  # use timer0, wakeup after 50.000 cycles
@@ -206,29 +173,25 @@ class ULP_WEATHER:
         mem32[ULP_MEM_BASE + self.load_addr] = 0x0  # initialise state to 0
         ulp.run(self.entry_addr)
 
-    def windspeed(self):
+    def _speed(self, count, seconds):
         cup_r = 80 # 80mm radius of wind cups
         full_circle = (2 * 3.14 * cup_r)
-        count = mem32[self.wind_counter] & ULP_DATA_MASK
-        # clear the counter
-        mem32[self.wind_counter] = 0
-        rps = 0
-        histo = []
-        if count > 0:
-            rps = (count / 10)
+        rps = count / seconds
         # meters per second
         mps = ((rps * full_circle) / 1000) 
-        # find the gust
-        histogram_start = self.wind_histogram
-        for i in range(0,10):
-            value = int(mem32[histogram_start] & ULP_DATA_MASK)
-            histo.append(value)
-            print('mem address: {}, value: {}'.format(histogram_start, value))
-            mem32[histogram_start] = 0
-            histogram_start += 4
-        histo.sort()
-        
-        return mps, histo[-1]
+        return mps
+
+    def windspeed(self, seconds):
+        total_count = mem32[self.wind_counter] & ULP_DATA_MASK
+        gust_count = mem32[self.wind_gust] & ULP_DATA_MASK
+        # clear the counters
+        mem32[self.wind_counter] = 0
+        mem32[self.wind_gust] = 0
+
+        avg_mps = self._speed(total_count, seconds)
+        gust_mps = self._speed(gust_count, 1)
+
+        return avg_mps, gust_mps
 
     def rainbuckets(self):
         value = int(mem32[self.rain_counter] & ULP_DATA_MASK)
