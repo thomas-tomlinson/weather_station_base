@@ -4,7 +4,7 @@ import time
 import binascii
 from machine import I2C, Pin, UART, lightsleep, RTC, ADC
 from micropython import const
-from ulp.ulp_weather import ULP_WEATHER
+from ulp_weather import ULP_WEATHER
 from as5600 import AS5600
 
 # I2C specific configs
@@ -80,7 +80,7 @@ def init_hc12():
 def read_wind(seconds):
     dict = {}
     avg_wind, gust_wind =  ulp.windspeed(seconds)
-    wind_dir = as5600.getAngle()
+    wind_dir = int(as5600.getAngle())
     dict['avg_wind'] = avg_wind
     dict['gust_wind'] = gust_wind
     dict['wind_dir'] = wind_dir
@@ -97,7 +97,7 @@ def gather_loop():
         # BME280 data gather
         payload['bme280'] = read_bme()
         payload['battery'] = read_battery()
-        payload['wind'] = read_wind()
+        payload['wind'] = read_wind(sleep_seconds)
         payload['rainbuckets'] = read_rain()
 
         # timestamp

@@ -1,5 +1,5 @@
 from esp32 import ULP
-from machine import mem32
+from machine import mem32, Pin
 import time
 from esp32_ulp import src_to_binary
 
@@ -165,6 +165,9 @@ class ULP_WEATHER:
         self.wind_counter = ULP_MEM_BASE + (4*4)
         self.wind_gust = ULP_MEM_BASE + (5*4)
         self.rain_counter = ULP_MEM_BASE +(7*4)
+        
+        self.wind_pin = Pin(32, Pin.IN)
+        self.rain_pin = Pin(35, Pin.IN)
 
         ulp = ULP()
         ulp.set_wakeup_period(0, 5000)  # use timer0, wakeup after 50.000 cycles
@@ -193,6 +196,9 @@ class ULP_WEATHER:
 
         return avg_mps, gust_mps
 
-    def rainbuckets(self):
+    def rainbuckets(self, reset=None):
         value = int(mem32[self.rain_counter] & ULP_DATA_MASK)
+        # need to either determine volume of each pulse.
+        if reset is True:
+            mem32[self.rain_counter] = 0
         return value
