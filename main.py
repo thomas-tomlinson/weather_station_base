@@ -2,6 +2,7 @@ import bme280_float as bme280
 import json
 import time
 import binascii
+from struct import pack
 from machine import I2C, Pin, UART, lightsleep, RTC, ADC
 from micropython import const
 from ulp_weather import ULP_WEATHER
@@ -24,6 +25,7 @@ rtc = RTC()
 def read_bme():
     dict = {}
     rawread = bme.values
+    # bme.read_compensated_data a better return?
     dict['temp'] = rawread[0]
     dict['pressure'] = rawread[1]
     dict['humidity'] = rawread[2]
@@ -34,10 +36,31 @@ def read_battery():
     # the actual voltage in micro volts.  
     batpin = ADC(Pin(34), atten=ADC.ATTN_11DB)
     try:
-        value = str(float((batpin.read_uv() / 1000000) * 2)) + "V"
+        value = str(float((batpin.read_uv() / 1000000) * 2)) 
     except:
-        value = '0.0V'
+        value = '0.0'
     return value
+
+def pack_data(payload):
+    packed = pack(">LfHHffff", 
+                  payload['timemark'], # L
+                  payload['battery'], # f
+                  payload['rainbuckets'], # H
+                  payload['wind']['wind_dir'], # H
+                  payload['wind']['avg_wind'], # f
+                  payload['wind']['gust_wind'], # f
+                  payload['bme280']['temp'], # f
+                  payload['bme280']['humidity'], # f
+                  payload['bme280']['pressure'], # f
+                  ) 
+# example payload
+# '{"wind": 
+#    {"wind_dir": 114, "avg_wind": 0.0, "gust_wind": 0.0},
+# "rainbuckets": 0, 
+# "battery": "3.774V", 
+# "timemark": 1296, 
+# "bme280": 
+#    {"pressure": "914.10hPa", "temp": "24.97C", "humidity": "34.01%"}}'
 
 def broadcast_data(payload):
     transmitPayload = binascii.b2a_base64(payload.encode())
@@ -100,11 +123,12 @@ def gather_loop():
         payload['wind'] = read_wind(sleep_seconds)
         payload['rainbuckets'] = read_rain()
 
-        # timestamp
         # we're using seconds since boot as a way to tell the data packets apart.
         payload['timemark'] = time.time()
-        payloadjson = json.dumps(payload)
-        broadcast_data(payloadjson)
+        #payloadjson = json.dumps(payload)
+        #broadcast_data(payloadjson)
+        packed_data = pack_data(payload)
+        broadcast_data(packed_data)
 
         # sleep for 30 seconds
         #deepsleep(20000)
