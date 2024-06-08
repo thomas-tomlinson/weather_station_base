@@ -12,8 +12,6 @@ source = """\
 #define RTC_GPIO_IN_NEXT_S           14
 .set wind_pin, 9  # GPIO32 / RTC_GPIO9 wind anonmeter pin
 .set rain_pin, 5  # GPIO35 RTC_GPIO5, rain bucket pin
-.set max_histogram_slots, 10
-.set max_histogram_bytes, max_histogram_slots * 4
 .set loops_per_sec, 200
 
 wind_status:
@@ -135,6 +133,9 @@ entry:
         jump wind_status_changed, eq        
 
 rain_check:
+        # have to ensure that r1 has the pin status register
+        READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S, 16)
+        move r1, r0
         # see if rain_status is changed
         rsh r0, r1, rain_pin
         and r0, r0, 1
@@ -166,8 +167,8 @@ class ULP_WEATHER:
         self.wind_gust = ULP_MEM_BASE + (5*4)
         self.rain_counter = ULP_MEM_BASE +(7*4)
         
-        self.wind_pin = Pin(32, Pin.IN)
-        self.rain_pin = Pin(35, Pin.IN)
+        self.wind_pin = Pin(32, Pin.IN, pull=None, hold=True)
+        self.rain_pin = Pin(35, Pin.IN, hold=True) # pull down doesn't exist on GPIO35
 
         ulp = ULP()
         ulp.set_wakeup_period(0, 5000)  # use timer0, wakeup after 50.000 cycles
@@ -181,8 +182,10 @@ class ULP_WEATHER:
         full_circle = (2 * 3.14 * cup_r)
         rps = count / seconds
         # meters per second
-        mps = ((rps * full_circle) / 1000) 
-        return mps
+        #mps = ((rps * full_circle) / 1000) 
+        #return mps
+        # temp - just return rps
+        return rps
 
     def windspeed(self, seconds):
         total_count = mem32[self.wind_counter] & ULP_DATA_MASK
