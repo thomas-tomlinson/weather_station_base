@@ -92,34 +92,30 @@ def init_hc12():
     set_pin.on()
     time.sleep_ms(200)
 
-#def read_wind(seconds):
-#    dict = {}
-#    avg_wind, gust_wind =  ulp.windspeed(seconds)
-#    wind_dir = int(as5600.getAngle())
-#    dict['avg_wind'] = avg_wind
-#    dict['gust_wind'] = gust_wind
-#    dict['wind_dir'] = wind_dir
-#    return dict
-
 def gather_loop():
     sleep_seconds = 20
+    start_ms = time.ticks_ms()
     while True:
         lightsleep(sleep_seconds * 1000)
+        now_ms = time.ticks_ms()
+        span_secs = (now_ms - start_ms) / 1000
         payload = {}
         payload['bme280'] = read_bme()
         payload['battery'] = read_battery()
-        ulp_data = ulp.retrieve_metrics(sleep_seconds)
+        ulp_data = ulp.retrieve_metrics(span_secs)
         payload['wind'] = {}
         payload['wind']['avg_wind'] = ulp_data['wind_avg_pulse_second']
         payload['wind']['gust_wind'] = ulp_data['wind_burst_pulse_second']
         payload['wind']['wind_dir'] = int(as5600.getAngle())
         payload['rainbuckets'] = int(ulp_data['rain_total_pulse_count'])
+        payload['rainbuckets_last24'] = int(ulp_data['rain_total_pulse_count_last_24hour'])
 
         # we're using seconds since boot as a way to tell the data packets apart.
         payload['timemark'] = time.time()
         print(payload)
         packed_data = pack_data(payload)
         broadcast_data(packed_data)
+        start_ms = time.ticks_ms()
 
 def main():
     init_hc12()

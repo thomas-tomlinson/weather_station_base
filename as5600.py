@@ -3,7 +3,7 @@ from micropython import const
 AS5600_ADDRESS = const(0x36)   # AS5600 has a fixed address (so can only use one per I2C bus?)
 ANGLE_H	= const(0x0E)          # Angle register (high byte)
 ANGLE_L	= const(0x0F)          # Angle register (low byte)
-zero_correction = const(114)   # what the as5600 reads at North on the windvane.
+zero_correction = const(0)   # what the as5600 reads at North on the windvane.
 
 class AS5600:
     def __init__(self, i2c=None):

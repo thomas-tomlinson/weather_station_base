@@ -1,9 +1,20 @@
+# reference for the memory locations : https://github.com/espressif/esp-idf/blob/v5.0.2/components/soc/esp32/rtc_io_periph.c#L53
+# remember RTC_GPIO numbers are different than the actual GPIO
+
 #define DR_REG_RTCIO_BASE            0x3ff48400
-#define RTC_IO_TOUCH_PAD0_REG        (DR_REG_RTCIO_BASE + 0x94)
-#define RTC_IO_TOUCH_PAD0_MUX_SEL_M  (BIT(19))
-#define RTC_IO_TOUCH_PAD0_FUN_IE_M   (BIT(13))
+# this is the addressing for GPIO32 / RTCIO9
+#define RTC_IO_XTAL_32K_PAD_REG      (DR_REG_RTCIO_BASE + 0x8c)
+#define RTC_IO_X32P_MUX_SEL_M        (BIT(17))
+#define RTC_IO_X32P_FUN_IE_M         (BIT(5))
+# this is the addressing for GPIO35 / RTCIO5
+#define RTC_IO_ADC_PAD_REG           (DR_REG_RTCIO_BASE + 0x80)
+#define RTC_IO_ADC2_MUX_SEL_M        (BIT(28))
+#define RTC_IO_ADC2_FUN_IE_M         (BIT(18))
+
 #define RTC_GPIO_IN_REG              (DR_REG_RTCIO_BASE + 0x24)
 #define RTC_GPIO_IN_NEXT_S           14
+.set windpin, 9 # RTC9, GPIO32
+.set rainpin, 5 # RTC5, GPIO35
 
 #wind global vars
   .global wind_pulse_edge
@@ -36,10 +47,6 @@ wind_pulse_min:
 
   .global wind_edge_count
 wind_edge_count:
-  .long 0
-
-  .global wind_io_number
-wind_io_number:
   .long 0
 
 #rain global vars
@@ -75,32 +82,18 @@ rain_pulse_min:
 rain_edge_count:
   .long 0
 
-  .global rain_io_number
-rain_io_number:
-  .long 0
-
   .text
   .global wind_entry
 wind_entry:
+  # connect GPIO to RTC
+  WRITE_RTC_REG(RTC_IO_XTAL_32K_PAD_REG, RTC_IO_X32P_MUX_SEL_M, 1, 1)
+  # switch the GPIO into input mode
+  WRITE_RTC_REG(RTC_IO_XTAL_32K_PAD_REG, RTC_IO_X32P_FUN_IE_M, 1, 1)
+
   jump wind_pulse_tick
 
 wind_read_now:
-  move r3, wind_io_number
-  ld r3, r3, 0
-
-  move r0, r3
-  jumpr wind_read_io_high, 16, ge
-
-  READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S, 16)
-  rsh r0, r0, r3
-  jump wind_read_done
-
-wind_read_io_high:
-  READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S + 16, 2)
-  sub r3, r3, 16
-  rsh r0, r0, r3
-
-wind_read_done:
+  READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S + windpin, 1)
   and r0, r0, 1
   move r3, wind_next_edge
   ld r3, r3, 0
@@ -182,25 +175,14 @@ wind_pulse_reset:
 
   .global rain_entry
 rain_entry:
+  # connect GPIO to RTC
+  WRITE_RTC_REG(RTC_IO_ADC_PAD_REG, RTC_IO_ADC2_MUX_SEL_M, 1, 1)
+  # switch the GPIO into input mode
+  WRITE_RTC_REG(RTC_IO_ADC_PAD_REG, RTC_IO_ADC2_FUN_IE_M, 1, 1)
   jump rain_pulse_tick
 
 rain_read_now:
-  move r3, rain_io_number
-  ld r3, r3, 0
-
-  move r0, r3
-  jumpr rain_read_io_high, 16, ge
-
-  READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S, 16)
-  rsh r0, r0, r3
-  jump rain_read_done
-
-rain_read_io_high:
-  READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S + 16, 2)
-  sub r3, r3, 16
-  rsh r0, r0, r3
-
-rain_read_done:
+  READ_RTC_REG(RTC_GPIO_IN_REG, RTC_GPIO_IN_NEXT_S + rainpin, 1)
   and r0, r0, 1
   move r3, rain_next_edge
   ld r3, r3, 0
