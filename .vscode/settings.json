@@ -5,8 +5,32 @@
         "reportMissingModuleSource": "none"
     },
     "python.analysis.typeshedPaths": [
-        ".venv/lib/python3.9/site-packages"
+        ".micropy/micropython_esp32_stubs-1.21.0.post4",
+        ".micropy/micropython_stdlib_stubs-1.1.2/stdlib",
+        ".micropy/BradenM-micropy-stubs-4f5a52a/frozen",
+        ".micropy/weather_station_base",
+        "typings"
     ],
     "python.linting.enabled": true,
-    "python.linting.pylintEnabled": true
+    "python.linting.pylintEnabled": true,
+    "python.analysis.autoSearchPath": true,
+    "python.autoComplete.extraPaths": [
+        ".micropy/micropython_esp32_stubs-1.21.0.post4",
+        ".micropy/micropython_stdlib_stubs-1.1.2/stdlib",
+        ".micropy/BradenM-micropy-stubs-4f5a52a/frozen",
+        ".micropy/weather_station_base"
+    ],
+    "python.autoComplete.typeshedPaths": [
+        ".micropy/micropython_esp32_stubs-1.21.0.post4",
+        ".micropy/micropython_stdlib_stubs-1.1.2/stdlib",
+        ".micropy/BradenM-micropy-stubs-4f5a52a/frozen",
+        ".micropy/weather_station_base",
+        "typings"
+    ],
+    "python.analysis.extraPaths": [
+        ".micropy/micropython_esp32_stubs-1.21.0.post4",
+        ".micropy/micropython_stdlib_stubs-1.1.2/stdlib",
+        ".micropy/BradenM-micropy-stubs-4f5a52a/frozen",
+        ".micropy/weather_station_base"
+    ]
 }

@@ -1,10 +1,8 @@
 import bme280_float as bme280
-import json
 import time
-import binascii
+import umsgpack
 from struct import pack
 from machine import I2C, Pin, UART, lightsleep, RTC, ADC
-from micropython import const
 from ulp_weather import ULP_WEATHER
 from as5600 import AS5600
 
@@ -37,8 +35,11 @@ def read_battery():
     try:
         value = float((batpin.read_uv() / 1000000) * 2)
     except:
-        value = 0.0
-    return value
+        return 0.0
+    if value > 0 and value < 5:
+        return value
+    else:
+        return 0.0
 
 def pack_data(payload):
     packed = pack(">LfHHfffffs", 
@@ -59,6 +60,7 @@ def broadcast_data(payload):
     #transmitPayload = binascii.b2a_base64(payload.encode())
     # console dump for anyone looking
     print(payload)
+    chksumed = checksum_payload(payload)
     # wake up HC-12
     set_pin = Pin(23, Pin.OUT)
     set_pin.off()
@@ -69,7 +71,7 @@ def broadcast_data(payload):
     set_pin.on()
     time.sleep_ms(200)
 
-    uart2.write(payload)
+    uart2.write(chksumed)
     uart2.flush()
     time.sleep_ms(200)
 
@@ -86,11 +88,20 @@ def init_hc12():
     set_pin = Pin(23, Pin.OUT)
     set_pin.off()
     time.sleep_ms(200)
-    uart2.write('AT+P5')
+    uart2.write('AT+P6')
     trash = uart2.read()
     uart2.flush()
     set_pin.on()
     time.sleep_ms(200)
+
+def checksum_payload(bytes):
+    data = umsgpack.dumps(bytes)
+    checksum = sum(data)
+    checksum1 = int(checksum // 256)
+    checksum2 = int(checksum % 256)
+    checksum = pack(">hh", checksum1, checksum2)
+    checksum_payload = data + checksum
+    return checksum_payload
 
 def gather_loop():
     sleep_seconds = 20
@@ -100,21 +111,23 @@ def gather_loop():
         now_ms = time.ticks_ms()
         span_secs = (now_ms - start_ms) / 1000
         payload = {}
-        payload['bme280'] = read_bme()
+        bme_data = read_bme()
+        payload['temp'] = bme_data['temp']
+        payload['pressure'] = bme_data['pressure']
+        payload['humidity'] = bme_data['humidity']
         payload['battery'] = read_battery()
         ulp_data = ulp.retrieve_metrics(span_secs)
-        payload['wind'] = {}
-        payload['wind']['avg_wind'] = ulp_data['wind_avg_pulse_second']
-        payload['wind']['gust_wind'] = ulp_data['wind_burst_pulse_second']
-        payload['wind']['wind_dir'] = int(as5600.getAngle())
+        payload['avg_wind'] = ulp_data['wind_avg_pulse_second']
+        payload['gust_wind'] = ulp_data['wind_burst_pulse_second']
+        payload['wind_dir'] = int(as5600.getAngle())
         payload['rainbuckets'] = int(ulp_data['rain_total_pulse_count'])
         payload['rainbuckets_last24'] = int(ulp_data['rain_total_pulse_count_last_24hour'])
 
         # we're using seconds since boot as a way to tell the data packets apart.
         payload['timemark'] = time.time()
         print(payload)
-        packed_data = pack_data(payload)
-        broadcast_data(packed_data)
+        msgpacked = umsgpack.dumps(payload)
+        broadcast_data(msgpacked)
         start_ms = time.ticks_ms()
 
 def main():
