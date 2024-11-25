@@ -59,8 +59,8 @@ def pack_data(payload):
 def broadcast_data(payload):
     #transmitPayload = binascii.b2a_base64(payload.encode())
     # console dump for anyone looking
-    print(payload)
     chksumed = checksum_payload(payload)
+    print("checksumed payload: {}".format(chksumed))
     # wake up HC-12
     set_pin = Pin(23, Pin.OUT)
     set_pin.off()
@@ -101,7 +101,7 @@ def checksum_payload(bytes):
     checksum2 = int(checksum % 256)
     checksum = pack(">hh", checksum1, checksum2)
     checksum_payload = data + checksum
-    return checksum_payload
+    return umsgpack.dumps(checksum_payload)
 
 def gather_loop():
     sleep_seconds = 20
@@ -125,12 +125,14 @@ def gather_loop():
 
         # we're using seconds since boot as a way to tell the data packets apart.
         payload['timemark'] = time.time()
-        print(payload)
+        print("payload: {}".format(payload))
         msgpacked = umsgpack.dumps(payload)
         broadcast_data(msgpacked)
         start_ms = time.ticks_ms()
 
 def main():
+    print("waiting for 15 seconds before entering main loop.  break if you want to get REPL")
+    time.sleep(15)
     init_hc12()
     gather_loop()
 
