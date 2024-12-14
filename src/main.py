@@ -1,6 +1,7 @@
 import bme280_float as bme280
 import time
 import umsgpack
+import rolling_average
 from struct import pack
 from machine import I2C, Pin, UART, lightsleep, RTC, ADC
 from ulp_weather import ULP_WEATHER
@@ -19,6 +20,9 @@ uart2 = UART(2, baudrate=9600, tx=17, rx=16)
 
 # create the RTC object
 rtc = RTC()
+
+# voltage rolling average 
+bat_volt_avg = rolling_average.ROLLINGAVERAGE(samples=5)
 
 def read_bme():
     dict = {}
@@ -103,13 +107,30 @@ def checksum_payload(bytes):
     checksum_payload = data + checksum
     return umsgpack.dumps(checksum_payload)
 
+def compute_sleep_seconds():
+    default_seconds = 20
+    min_delay = 20
+    max_delay = 200
+    avg = bat_volt_avg.compute_avg()
+    if avg is None:
+        return default_seconds
+
+    if avg > 3.7:
+        return default_seconds
+
+    if avg > 2:
+        # really bad linear regression
+        return ((-268*avg) + 1006)
+
+    return max_delay
+
+
 def gather_loop():
     sleep_seconds = 20
     start_ms = time.ticks_ms()
     while True:
-        lightsleep(sleep_seconds * 1000)
-        now_ms = time.ticks_ms()
-        span_secs = (now_ms - start_ms) / 1000
+        lightsleep(int(sleep_seconds * 1000))
+        span_secs = int((time.ticks_ms() - start_ms) / 1000)
         payload = {}
         bme_data = read_bme()
         payload['temp'] = bme_data['temp']
@@ -122,12 +143,14 @@ def gather_loop():
         payload['wind_dir'] = int(as5600.getAngle())
         payload['rainbuckets'] = int(ulp_data['rain_total_pulse_count'])
         payload['rainbuckets_last24'] = int(ulp_data['rain_total_pulse_count_last_24hour'])
-
+        bat_volt_avg.submit(payload['battery'])
         # we're using seconds since boot as a way to tell the data packets apart.
         payload['timemark'] = time.time()
         print("payload: {}".format(payload))
         msgpacked = umsgpack.dumps(payload)
         broadcast_data(msgpacked)
+        sleep_seconds = int(compute_sleep_seconds())
+        print("sleeping for {} seconds".format(sleep_seconds))
         start_ms = time.ticks_ms()
 
 def main():
