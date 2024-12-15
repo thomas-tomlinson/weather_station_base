@@ -109,21 +109,21 @@ def checksum_payload(bytes):
 
 def compute_sleep_seconds():
     default_seconds = 20
-    min_delay = 20
     max_delay = 200
+    cutoff_voltage = 3.7
+    min_voltage = 3.0
+    delay_factor = (max_delay / (cutoff_voltage - min_voltage)) 
     avg = bat_volt_avg.compute_avg()
     if avg is None:
         return default_seconds
 
-    if avg > 3.7:
+    if avg >= cutoff_voltage:
         return default_seconds
 
-    if avg > 2:
-        # really bad linear regression
-        return ((-268*avg) + 1006)
-
-    return max_delay
-
+    if avg >= min_voltage:
+        return ((cutoff_voltage - avg) * delay_factor) + default_seconds
+    else:
+        return max_delay
 
 def gather_loop():
     sleep_seconds = 20
