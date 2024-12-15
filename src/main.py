@@ -107,23 +107,22 @@ def checksum_payload(bytes):
     checksum_payload = data + checksum
     return umsgpack.dumps(checksum_payload)
 
-def compute_sleep_seconds():
+def compute_sleep_seconds(avg):
     default_seconds = 20
     max_delay = 200
     cutoff_voltage = 3.7
     min_voltage = 3.0
     delay_factor = (max_delay / (cutoff_voltage - min_voltage)) 
-    avg = bat_volt_avg.compute_avg()
     if avg is None:
-        return default_seconds
-
-    if avg >= cutoff_voltage:
-        return default_seconds
-
-    if avg >= min_voltage:
-        return ((cutoff_voltage - avg) * delay_factor) + default_seconds
+        sleep_seconds = default_seconds
+    elif avg >= cutoff_voltage:
+        sleep_seconds = default_seconds
+    elif avg >= min_voltage:
+        sleep_seconds = ((cutoff_voltage - avg) * delay_factor) + default_seconds
     else:
-        return max_delay
+        sleep_seconds = max_delay + default_seconds
+
+    return int(sleep_seconds)
 
 def gather_loop():
     sleep_seconds = 20
@@ -149,7 +148,7 @@ def gather_loop():
         print("payload: {}".format(payload))
         msgpacked = umsgpack.dumps(payload)
         broadcast_data(msgpacked)
-        sleep_seconds = int(compute_sleep_seconds())
+        sleep_seconds = compute_sleep_seconds(bat_volt_avg.compute_avg())
         print("sleeping for {} seconds".format(sleep_seconds))
         start_ms = time.ticks_ms()
 

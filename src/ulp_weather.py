@@ -66,7 +66,7 @@ class ULP_WEATHER:
     def increment_rain_holder(self, count):
         # check if we're over 24 hours
         now = time.time()
-        if self.rain_bucket_last_reset / now > 1:
+        if now - self.rain_bucket_last_reset > 86400:
             # day rollover
             self.rain_buckets_last_24hours = count
             self.rain_bucket_last_rest = now
