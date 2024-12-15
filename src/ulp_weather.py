@@ -15,9 +15,8 @@ class ULP_WEATHER:
         self.entry_addr = ULP_MEM_BASE + (16*4)
         self.sleep_micro_seconds = 5000
 
-        # rain 24 hours running total
-        self.init_rain_holder()
-        self.rain_buckets_last_24hours = 0
+        # rain total holder
+        self.rain_buckets_counter = 0
         #wind vars in ulp 
         # these values are calculated upon a compile of the ULP code.  Currently
         # this is found through watching the console during the compile and noting the 
@@ -57,23 +56,9 @@ class ULP_WEATHER:
 
         self.ulp.run(self.entry_addr)
     
-    def init_rain_holder(self):
-        self.rain_buckets_last_24hours = 0
-        # this is how we determine when 24 hours have rolled over
-        self.rain_bucket_last_reset = time.time()
-        return True
-
     def increment_rain_holder(self, count):
-        # check if we're over 24 hours
-        now = time.time()
-        if now - self.rain_bucket_last_reset > 86400:
-            # day rollover
-            self.rain_buckets_last_24hours = count
-            self.rain_bucket_last_rest = now
-        else:
-            self.rain_buckets_last_24hours += count
-
-        return self.rain_buckets_last_24hours
+        self.rain_buckets_counter += count
+        return self.rain_buckets_counter
 
     def retrieve_metrics(self, seconds):
         dict = {}
@@ -86,15 +71,14 @@ class ULP_WEATHER:
         # shortest time in seconds betweeen two detected pulses.
         dict['wind_burst_pulse_second'] = wind_sp 
         dict['rain_burst_pulse_second'] = rain_sp 
-        #24 hour rain bucket totals
-        dict['rain_total_pulse_count_last_24hour'] = self.increment_rain_holder(rain_p)
-
+        # total number of rain buckets since boot
+        dict['rain_total_pulse_counter'] = self.increment_rain_holder(rain_p)
         return dict
 
     def get_pulse_count(self):
-        wind_pulse_count = (mem32[self.ulp_wind_edge_count] & 0xffff) / 2
+        wind_pulse_count = int((mem32[self.ulp_wind_edge_count] & 0xffff) / 2)
         mem32[self.ulp_wind_edge_count] = (mem32[self.ulp_wind_edge_count] & 0xffff) % 2
-        rain_pulse_count = (mem32[self.ulp_rain_edge_count] & 0xffff) / 2
+        rain_pulse_count = int((mem32[self.ulp_rain_edge_count] & 0xffff) / 2)
         mem32[self.ulp_rain_edge_count] = (mem32[self.ulp_rain_edge_count] & 0xffff) % 2
         return wind_pulse_count, rain_pulse_count
 

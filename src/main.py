@@ -141,11 +141,11 @@ def gather_loop():
         payload['gust_wind'] = ulp_data['wind_burst_pulse_second']
         payload['wind_dir'] = int(as5600.getAngle())
         payload['rainbuckets'] = int(ulp_data['rain_total_pulse_count'])
-        payload['rainbuckets_last24'] = int(ulp_data['rain_total_pulse_count_last_24hour'])
+        payload['rainbuckets_total'] = int(ulp_data['rain_total_pulse_counter'])
         bat_volt_avg.submit(payload['battery'])
         # we're using seconds since boot as a way to tell the data packets apart.
         payload['timemark'] = time.time()
-        print("payload: {}".format(payload))
+        print("payload: {} ulp data: {}".format(payload, ulp_data))
         msgpacked = umsgpack.dumps(payload)
         broadcast_data(msgpacked)
         sleep_seconds = compute_sleep_seconds(bat_volt_avg.compute_avg())
