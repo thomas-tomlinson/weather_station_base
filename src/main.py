@@ -1,4 +1,4 @@
-import bme280_float as bme280
+import sht4x
 import time
 import umsgpack
 import rolling_average
@@ -9,7 +9,7 @@ from as5600 import AS5600
 
 # I2C specific configs
 i2c = I2C(0, scl=Pin(22), sda=Pin(21))
-bme = bme280.BME280(i2c=i2c)
+sht = sht4x.SHT4X(i2c=i2c)
 as5600 = AS5600(i2c=i2c) 
 
 # init the ULP data gather process
@@ -24,12 +24,11 @@ rtc = RTC()
 # voltage rolling average 
 bat_volt_avg = rolling_average.ROLLINGAVERAGE(samples=5)
 
-def read_bme():
+def read_sht41():
     dict = {}
-    rawread = bme.read_compensated_data()
-    dict['temp'] = rawread[0]
-    dict['pressure'] = rawread[1]
-    dict['humidity'] = rawread[2]
+    temp, humidity = sht.measurements
+    dict['temp'] = temp
+    dict['humidity'] = humidity
     return dict
 
 def read_battery():
@@ -131,10 +130,9 @@ def gather_loop():
         lightsleep(int(sleep_seconds * 1000))
         span_secs = int((time.ticks_ms() - start_ms) / 1000)
         payload = {}
-        bme_data = read_bme()
-        payload['temp'] = bme_data['temp']
-        payload['pressure'] = bme_data['pressure']
-        payload['humidity'] = bme_data['humidity']
+        sht41_data = read_sht41()
+        payload['temp'] = sht41_data['temp']
+        payload['humidity'] = sht41_data['humidity']
         payload['battery'] = read_battery()
         ulp_data = ulp.retrieve_metrics(span_secs)
         payload['avg_wind'] = ulp_data['wind_avg_pulse_second']
